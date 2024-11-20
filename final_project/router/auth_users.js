@@ -1,133 +1,94 @@
 const express = require('express');
+const jwt = require('jsonwebtoken');
 let books = require("./booksdb.js");
-let isValid = require("./auth_users.js").isValid;
-let users = require("./auth_users.js").users;
-const public_users = express.Router();
-const axios = require('axios');
+const regd_users = express.Router();
 
+let users = [{
+  username: "user1",
+  password: "user1"
+}];
 
-public_users.post("/register", (req,res) => {
-  if(isValid(req.body.username)){
-    return res.status(400).json({message: "Error: Username already exists!"});
+const isValid = (username)=>{ //returns boolean
+  let userWithUsername = users.filter((user)=>
+    user.username===username
+    );
+  if(userWithUsername.length>0){
+    return true;
+  }
+  else{
+    return false;
+  }
+}
+
+const authenticatedUser = (username,password)=>{ //returns boolean
+  let authUser = users.filter((user)=>
+  user.username===username && user.password===password
+  );
+  if(authUser.length>0){  
+    return true;
+  }
+  else
+  { 
+    return false;
+  }
+}
+
+//only registered users can login
+regd_users.post("/login", (req,res) => {
+  const username = req.body.username;
+  const password = req.body.password;
+  if(!username||!password){
+    return res.status(400).json({message: "Error: Logging in!"});
+  }
+
+  if(authenticatedUser(username,password)){
+    let accessToken=jwt.sign({
+      username:username      
+    }, 'access',{expiresIn:60*60});
+    req.session.authorization={
+      accessToken,username
+    }
+    return res.status(200).json({message: "Login successful!"});
   }
   else
   {
-    let user = {
-      username: req.body.username,
-      password: req.body.password
-    }
-    users.push(user);
-    return res.status(200).json({message: "Registration successful!"});
+    return res.status(400).json({message: "Error: Invalid username or password!"});
   }
 });
 
-// Get the book list available in the shop
-public_users.get('/',function (req, res) {
-  res.send(JSON.stringify(books))
+// Add a book review
+regd_users.put("/auth/review/:isbn", (req, res) => {
+  const isbn = req.params.isbn;
+  const username = req.body.username;
+  const review = req.body.review;
+  if(!isbn||!username||!review){
+    return res.status(400).json({message: "Error: Invalid request!"});
+  }
+  if(!isValid(username)){
+    return res.status(400).json({message: "Error: Invalid username!"});
+  }
+  if(!books[isbn]){
+    return res.status(400).json({message: "Error: Invalid ISBN!"});
+  }
+  books[isbn].reviews[username]=review;
+  return res.status(200).json({message: "Review added successfully!"});
 });
 
-// Get book details based on ISBN
-public_users.get('/isbn/:isbn',function (req, res) {
-  const isbn=req.params.isbn;
-  res.send(books[isbn])
-  
- });
-  
-// Get book details based on author
-public_users.get('/author/:author',function (req, res) {
-  //Write your code here
-  let author = req.params.author;
-  let arr = Object.entries(books)
-  const book_author = new Promise((resolve, reject)=>{
-
-    let book_by_author = arr.filter((item)=>item[1].author === author)
-    if(book_by_author)
-    {
-      resolve(book_by_author)
-      // res.status(200).json(book_by_author[0][1])
-    }
-    else{
-      // res.status(404).json({message: `No Book is found for the author: ${author}`})
-      reject({message: `No Book is found for the author: ${author}`})
-    }
-  })
-
-  book_author.then((resp)=>{
-    res.status(200).json(resp)
-  }).catch(err=>res.status(403).json({error: err}))
-  
+regd_users.delete("/auth/review/:isbn", (req, res) => {
+  const isbn = req.params.isbn;
+  const username = req.body.username;
+  if(!isbn||!username){
+    return res.status(400).json({message: "Error: Invalid request!"});
+  }
+  if(!isValid(username)){
+    return res.status(400).json({message: "Error: Invalid username!"});   
+  }
+  if(!books[isbn]){
+    return res.status(400).json({message: "Error: Invalid ISBN!"});
+  }
+  delete books[isbn].reviews[username];
 });
 
-// Get all books based on title
-public_users.get('/title/:title',function (req, res) {
-  let title = req.params.title;
-  let arr = Object.entries(books)
-
-  const book_title = new Promise((resolve,reject)=>{
-    let book_by_title = arr.filter((item)=>item[1].title === title)
-    if(book_by_title)
-    {
-      // res.status(200).json(book_by_title[0][1])
-      resolve(book_by_title[0][1])
-    }
-    else
-    {
-      // res.status(404).json({message: `No Book is found for the title: ${title}`})
-      reject({message: `No Book is found for the title: ${title}` })
-    }
-  });
-
-  book_title.then((resp)=>{
-    res.status(200).json(resp)
-    }).catch(err=>res.status(403).json({error: err}))
-});
-//  Get book review
-public_users.get('/review/:isbn',function (req, res) {
-  const isbn=req.params.isbn;
-  res.send(JSON.stringify(books[isbn].reviews))
-});
-
-let url="http://localhost:3000/";
-const getBookDetails=async(url)=>{
-      let resp = await axios.get(url);
-      let books = resp.data;
-      books.map((book)=>{
-        console.log(book[isbn]);
-        console.log(book[isbn].author);
-        console.log(book[isbn].title);
-        console.log(book[isbn].reviews);
-      });
-}
-
-url="http://localhost:3000/isbn/";
-const getBookDetailsByISBN=async(url,isbn)=>{
-      let resp = await axios.get(url+isbn);
-      let book = resp.data;
-      console.log(book[isbn]);
-}
-
-url="http://localhost:3000/author/";
-const getBookDetailsByAuthor=async(url,author)=>{
-      let resp = await axios.get(url+author);
-      let books = resp.data;
-      books.map((book)=>{
-        console.log(book[isbn]);
-        console.log(book[isbn].author);
-        console.log(book[isbn].title);
-        console.log(book[isbn].reviews);
-      });
-}
-
-url="http://localhost:3000/title/";
-const getBookDetailsByTitle=async(url,title)=>{
-      let resp = await axios.get(url+title);
-      let books = resp.data;  
-      books.map((book)=>{
-        console.log(book[isbn]);
-        console.log(book[isbn].author);
-        console.log(book[isbn].title);
-        console.log(book[isbn].reviews);
-      });
-}
-
-module.exports.general = public_users;
+module.exports.authenticated = regd_users;
+module.exports.isValid = isValid;
+module.exports.users = users;
